@@ -1,98 +1,214 @@
 import os
-import streamlit as st
 import base64
+import platform
+import traceback
+import streamlit as st
+from PIL import Image
 from openai import OpenAI
 
-# Function to encode the image to base64
+# ==========================================
+# CONFIGURACIÓN DE PÁGINA Y DISEÑO NUTRICIONAL
+# ==========================================
+st.set_page_config(
+    page_title="NutriVision AI | Análisis Nutricional Inteligente",
+    page_icon="🥗",
+    layout="wide",
+    initial_sidebar_state="expanded"
+)
+
+# Estilos CSS orientados a un entorno saludable, limpio y moderno (Tonos verdes y blancos)
+st.markdown("""
+<style>
+    .main { padding: 1.5rem 2.5rem; }
+    
+    .nutri-banner {
+        background: linear-gradient(135deg, #064E3B 0%, #065F46 50%, #047857 100%);
+        padding: 2rem 2.5rem;
+        border-radius: 16px;
+        color: #FFFFFF;
+        margin-bottom: 2rem;
+        box-shadow: 0 10px 25px -5px rgba(6, 95, 70, 0.2);
+    }
+    
+    .nutri-banner h1 {
+        color: #FFFFFF !important;
+        font-weight: 800;
+        font-size: 2.2rem;
+        margin-bottom: 0.4rem;
+    }
+    
+    .nutri-banner p {
+        color: #D1FAE5;
+        font-size: 1.05rem;
+        margin: 0;
+    }
+
+    .stButton>button {
+        background: linear-gradient(90deg, #059669 0%, #10B981 100%);
+        color: white !important;
+        font-weight: 600;
+        font-size: 0.95rem;
+        padding: 0.6rem 1.5rem;
+        border-radius: 8px;
+        border: none;
+        transition: all 0.2s ease;
+        width: 100%;
+    }
+    
+    .stButton>button:hover {
+        opacity: 0.95;
+        transform: translateY(-1px);
+        box-shadow: 0 4px 12px rgba(16, 185, 129, 0.25);
+    }
+</style>
+""", unsafe_allow_html=True)
+
 def encode_image(image_file):
     return base64.b64encode(image_file.getvalue()).decode("utf-8")
 
+# ==========================================
+# BARRA LATERAL: CONTROL Y CREDENCIALES
+# ==========================================
+with st.sidebar:
+    st.markdown("## 🥗 NutriVision AI")
+    st.caption("Asistente experto en análisis de etiquetas nutricionales, platos preparados y conteo calórico visual.")
+    
+    st.markdown("---")
 
-st.set_page_config(page_title="Analisis de imagen", layout="centered", initial_sidebar_state="collapsed")
-# Streamlit page setup
-st.title("Análisis de Imagen:🤖🏞️")
-ke = st.text_input('Ingresa tu Clave')
-os.environ['OPENAI_API_KEY'] = ke
+    st.subheader("🔑 Paso 1: Autenticación")
+    ke = st.text_input(
+        "Clave API de OpenAI", 
+        type="password",
+        placeholder="sk-...",
+        help="Tu API Key es requerida para el análisis visual de alimentos y etiquetas."
+    )
+    
+    if ke:
+        os.environ['OPENAI_API_KEY'] = ke
+        st.success("API Key vinculada correctamente")
+    else:
+        st.warning("Ingresa tu API Key para habilitar la plataforma.")
 
+    st.markdown("---")
+    st.caption(f"Entorno: Python v{platform.python_version()} | GPT-4o Vision Engine")
 
-# Retrieve the OpenAI API Key from secrets
-api_key = os.environ['OPENAI_API_KEY']
+# ==========================================
+# ENCABEZADO Y PASOS CONDUCTUALES
+# ==========================================
+st.markdown("""
+<div class="nutri-banner">
+    <h1>Análisis Nutricional & Etiquetas por Imagen 🥗</h1>
+    <p>Sube la foto de un plato de comida o la tabla nutricional de un producto para evaluar calorías, macros, alérgenos y calidad de ingredientes.</p>
+</div>
+""", unsafe_allow_html=True)
 
-# Initialize the OpenAI client with the API key
-client = OpenAI(api_key=api_key)
+api_key = os.environ.get('OPENAI_API_KEY', '')
 
-# File uploader allows user to add their own image
-uploaded_file = st.file_uploader("Upload an image", type=["jpg", "png", "jpeg"])
+col_upload, col_analysis = st.columns([1, 1.2])
 
-if uploaded_file:
-    # Display the uploaded image
-    with st.expander("Image", expanded = True):
-        st.image(uploaded_file, caption=uploaded_file.name, use_container_width=True)
-
-# Toggle for showing additional details input
-show_details = st.toggle("Pregunta algo específico sobre la imagen", value=False)
-
-if show_details:
-    # Text input for additional details about the image, shown only if toggle is True
-    additional_details = st.text_area(
-        "Adiciona contexto de la imagen aqui:",
-        disabled=not show_details
+with col_upload:
+    st.subheader("📸 Paso 2: Cargar Foto de Alimento / Etiqueta")
+    uploaded_file = st.file_uploader(
+        "Sube un archivo de imagen (PNG, JPG, JPEG)",
+        type=["jpg", "png", "jpeg"],
+        help="Sube la foto del plato o etiqueta nutricional que deseas analizar."
     )
 
-# Button to trigger the analysis
-analyze_button = st.button("Analiza la imagen", type="secondary")
+    if uploaded_file:
+        with st.expander("👁️ Previsualización de la Imagen", expanded=True):
+            st.image(uploaded_file, caption=f"Archivo: {uploaded_file.name}", width=350)
 
-# Check if an image has been uploaded, if the API key is available, and if the button has been pressed
-if uploaded_file is not None and api_key and analyze_button:
+with col_analysis:
+    st.subheader("💬 Paso 3: Definir Enfoque Nutricional")
+    
+    if "preset_query" not in st.session_state:
+        st.session_state.preset_query = ""
 
-    with st.spinner("Analizando ..."):
-        # Encode the image
-        base64_image = encode_image(uploaded_file)
+    st.write("*Atajos Rápidos:*")
+    btn_col1, btn_col2 = st.columns(2)
     
-        prompt_text = ("Describe what you see in the image in spanish")
-    
-        if show_details and additional_details:
-            prompt_text += (
-                f"\n\nAdditional Context Provided by the User:\n{additional_details}"
-            )
-    
-        # Create the payload for the completion request - CORRECTED FORMAT
-        messages = [
-            {
-                "role": "user",
-                "content": [
-                    {"type": "text", "text": prompt_text},
-                    {
-                        "type": "image_url",
-                        "image_url": {
-                            "url": f"data:image/jpeg;base64,{base64_image}"
-                        }
-                    },
-                ],
-            }
-        ]
-    
-        # Make the request to the OpenAI API
-        try:
-            # Stream the response
-            full_response = ""
-            message_placeholder = st.empty()
-            for completion in client.chat.completions.create(
-                model="gpt-4o", messages=messages,   
-                max_tokens=1200, stream=True
-            ):
-                # Check if there is content to display
-                if completion.choices[0].delta.content is not None:
-                    full_response += completion.choices[0].delta.content
-                    message_placeholder.markdown(full_response + "▌")
-            # Final update to placeholder after the stream ends
-            message_placeholder.markdown(full_response)
-    
-        except Exception as e:
-            st.error(f"An error occurred: {e}")
-else:
-    # Warnings for user action required
-    if not uploaded_file and analyze_button:
-        st.warning("Please upload an image.")
+    with btn_col1:
+        if st.button("⚖️ Conteo de Macros y Calorías"):
+            st.session_state.preset_query = "Estima las calorías aproximadas, proteínas, carbohidratos y grasas saludables de este plato o producto."
+        if st.button("🚨 Alérgenos e Ingredientes Ocultos"):
+            st.session_state.preset_query = "Analiza los ingredientes o la etiqueta en busca de azúcares añadidos, ultraprocesados o alérgenos comunes."
+
+    with btn_col2:
+        if st.button("💪 Apto para Dieta Fitness"):
+            st.session_state.preset_query = "Evalúa si este alimento es adecuado para una dieta orientada a ganancia muscular o pérdida de grasa."
+        if st.button("📋 Calidad Nutricional General"):
+            st.session_state.preset_query = "¿Qué tan saludable es este producto o preparación y qué alternativas o mejoras sugieres?"
+
+    with st.form(key="nutri_vision_form"):
+        user_query = st.text_area(
+            "Pregunta o instrucción nutricional:",
+            value=st.session_state.preset_query,
+            placeholder="Ejemplo: Analiza la etiqueta de este producto y dime si es saludable para consumo diario...",
+            height=110
+        )
+        
+        submit_button = st.form_submit_button(label="🚀 Ejecutar Análisis Nutricional")
+
+# ==========================================
+# PROCESAMIENTO Y EJECUCIÓN VISION
+# ==========================================
+if submit_button:
     if not api_key:
-        st.warning("Por favor ingresa tu API key.")
+        st.error("⚠️ Por favor ingresa tu API Key de OpenAI en el panel lateral antes de continuar.")
+    elif not uploaded_file:
+        st.error("⚠️ Por favor carga una imagen en el Paso 2 antes de iniciar el análisis.")
+    else:
+        try:
+            client = OpenAI(api_key=api_key)
+            
+            with st.spinner("Analizando composición nutricional y calidad de ingredientes..."):
+                base64_image = encode_image(uploaded_file)
+                
+                prompt_instrucciones = (
+                    "Eres un nutricionista clínico y experto en seguridad alimentaria. "
+                    "Analiza la siguiente imagen de comida o etiqueta nutricional en español. "
+                    "Proporciona respuestas claras, estructuradas con viñetas y orientadas al bienestar y salud del usuario.\n\n"
+                )
+                
+                if user_query.strip():
+                    prompt_instrucciones += f"Consulta específica del usuario:\n{user_query}"
+                else:
+                    prompt_instrucciones += "Realiza una evaluación nutricional general analizando: Estimación calórica/macros principales, calidad de ingredientes y recomendaciones de consumo."
+
+                messages = [
+                    {
+                        "role": "user",
+                        "content": [
+                            {"type": "text", "text": prompt_instrucciones},
+                            {
+                                "type": "image_url",
+                                "image_url": {
+                                    "url": f"data:image/jpeg;base64,{base64_image}"
+                                }
+                            },
+                        ],
+                    }
+                ]
+
+                st.markdown("---")
+                st.subheader("📋 Reporte Nutricional Inteligente")
+                
+                message_placeholder = st.empty()
+                full_response = ""
+
+                for completion in client.chat.completions.create(
+                    model="gpt-4o-mini",
+                    messages=messages,
+                    max_tokens=1000,
+                    stream=True
+                ):
+                    if completion.choices[0].delta.content is not None:
+                        full_response += completion.choices[0].delta.content
+                        message_placeholder.markdown(full_response + "▌")
+
+                message_placeholder.info(full_response)
+
+        except Exception as e:
+            st.error("Ocurrió un inconveniente al procesar la imagen.")
+            with st.expander("Ver detalle técnico del error"):
+                st.code(traceback.format_exc())
